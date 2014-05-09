@@ -18,7 +18,7 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
+    <OutputPath>D:\jjoobb2008\Global Assembly\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -42,11 +42,20 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Credential.cs" />
+    <Compile Include="ClientCredential.cs" />
     <Compile Include="DownloadFile.cs" />
     <Compile Include="Followers.cs" />
     <Compile Include="GroupInfo.cs" />
     <Compile Include="LangType.cs" />
+    <Compile Include="Mass\Article.cs" />
+    <Compile Include="Mass\BaseMess.cs" />
+    <Compile Include="Mass\FilterMess.cs" />
+    <Compile Include="Mass\FilterSubMess.cs" />
+    <Compile Include="Mass\News.cs" />
+    <Compile Include="Mass\SendReturnCode.cs" />
+    <Compile Include="Mass\ToUserMess.cs" />
+    <Compile Include="Mass\ToUserSubMess.cs" />
+    <Compile Include="Mass\UploadVideoInfo.cs" />
     <Compile Include="MediaInfo.cs" />
     <Compile Include="Menu\BaseButton.cs" />
     <Compile Include="Menu\ClickButton.cs" />
@@ -60,6 +69,7 @@
     <Compile Include="Message\EventClickMsg.cs" />
     <Compile Include="Message\EventFansScanMsg.cs" />
     <Compile Include="Message\EventLocationMsg.cs" />
+    <Compile Include="Message\EventMassSendJobFinishMsg.cs" />
     <Compile Include="Message\EventType.cs" />
     <Compile Include="Message\EventUnattendMsg.cs" />
     <Compile Include="Message\EventUserScanMsg.cs" />
@@ -94,8 +104,17 @@
     <Compile Include="ReturnCode.cs" />
     <Compile Include="UserInfo.cs" />
     <Compile Include="Util.cs" />
+    <Compile Include="WebCredential.cs" />
+    <Compile Include="WebUserInfo.cs" />
     <Compile Include="WeiXin.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="EventMsg.cd" />
+    <None Include="RecMsg.cd" />
+    <None Include="ReplyMsg.cd" />
+    <None Include="SendMsg.cd" />
+  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

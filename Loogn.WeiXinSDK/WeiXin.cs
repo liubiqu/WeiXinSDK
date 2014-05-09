@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Loogn.WeiXinSDK.Menu;
 using Loogn.WeiXinSDK.Message;
+using Loogn.WeiXinSDK.Mass;
 
 namespace Loogn.WeiXinSDK
 {
@@ -14,12 +15,16 @@ namespace Loogn.WeiXinSDK
     /// <param name="t"></param>
     /// <returns></returns>
     public delegate TResult MyFunc<T1, TResult>(T1 t);
+    public delegate void SetAccessTokenHandler(ClientCredential credential);
+    public delegate string GetAccessTokenHandler();
+
     /// <summary>
     /// 微信接口API
     /// </summary>
     public class WeiXin
     {
         static string AppID, AppSecret;
+        static object lockObj = new object();
         /// <summary>
         /// 设置全局appId和appSecret,一般只用在应用程序启动时调用一次即可
         /// </summary>
@@ -30,6 +35,18 @@ namespace Loogn.WeiXinSDK
             AppID = appId;
             AppSecret = appSecret;
         }
+        static SetAccessTokenHandler m_setHandler;
+        static GetAccessTokenHandler m_getHandler;
+        /// <summary>
+        /// 设置AccessToken缓存方法
+        /// </summary>
+        /// <param name="setHandler"></param>
+        /// <param name="getHandler"></param>
+        public static void ConfigAccessTokenCache(SetAccessTokenHandler setHandler, GetAccessTokenHandler getHandler)
+        {
+            m_setHandler = setHandler;
+            m_getHandler = getHandler;
+        }
 
         /// <summary>
         /// 得到AccessToken
@@ -39,7 +56,27 @@ namespace Loogn.WeiXinSDK
         /// <returns></returns>
         public static string GetAccessToken(string appId, string appSecret)
         {
-            return Credential.GetCredential(appId, appSecret).access_token ?? string.Empty;
+            if (m_setHandler == null || m_setHandler == null)
+            {
+                throw new ArgumentNullException("setHandler,getHandler", "请先调用ConfigAccessTokenCache");
+            }
+            lock (lockObj)
+            {
+                var at = m_getHandler();
+                if (string.IsNullOrEmpty(at))
+                {
+                    var credential = ClientCredential.GetCredential(appId, appSecret);
+                    m_setHandler(credential);
+                    at = credential.access_token;
+                }
+                return at;
+            }
+        }
+
+        public static string GetAccessToken()
+        {
+            CheckGlobalCredential();
+            return GetAccessToken(AppID, AppSecret);
         }
 
         /// <summary>
@@ -133,6 +170,26 @@ namespace Loogn.WeiXinSDK
                                 replyMsg = GetReply<EventAttendMsg>(key + MyEventType.Attend.ToString(), msg);
                             }
                             break;
+                        }
+                    case EventType.MASSSENDJOBFINISH:
+                        {
+                            var msg = new EventMassSendJobFinishMsg
+                            {
+                                CreateTime = Int64.Parse(dict["CreateTime"]),
+                                FromUserName = dict["FromUserName"],
+                                ToUserName = dict["ToUserName"],
+                                MyEventType = MyEventType.MASSSENDJOBFINISH,
+                                ErrorCount = int.Parse(dict["ErrorCount"]),
+                                FilterCount = int.Parse(dict["FilterCount"]),
+                                MsgID = int.Parse(dict["MsgID"]),
+                                SentCount = int.Parse(dict["SentCount"]),
+                                TotalCount = int.Parse(dict["TotalCount"]),
+                                Status = dict["Status"]
+                            };
+
+                            replyMsg = GetReply<EventMassSendJobFinishMsg>(key + MyEventType.MASSSENDJOBFINISH.ToString(), msg);
+                            break;
+                            
                         }
                 }
                 #endregion
@@ -263,11 +320,15 @@ namespace Loogn.WeiXinSDK
             {
                 key += MyEventType.UserScan.ToString();
             }
+            else if (type == typeof(EventMassSendJobFinishMsg))
+            {
+                key += MyEventType.MASSSENDJOBFINISH.ToString();
+            }
             else
             {
                 return;
             }
-            m_msgHandlers[key.ToLower()] =handler;
+            m_msgHandlers[key.ToLower()] = handler;
         }
 
         static ReplyBaseMsg GetReply<TMsg>(string key, TMsg msg) where TMsg : RecEventBaseMsg
@@ -316,6 +377,85 @@ namespace Loogn.WeiXinSDK
             CheckGlobalCredential();
             return SendMsg(msg, AppID, AppSecret);
         }
+
+
+        #endregion
+
+        #region 群发
+        /// <summary>
+        /// 根据分组进行群发
+        /// </summary>
+        /// <param name="mess"></param>
+        /// <param name="appId"></param>
+        /// <param name="appSecret"></param>
+        /// <returns></returns>
+        public SendReturnCode SendMessByGroup(FilterMess mess, string appId, string appSecret)
+        {
+            var url = "https://api.weixin.qq.com/cgi-bin/message/mass/sendall?access_token=";
+            string access_token = GetAccessToken(appId, appSecret);
+            url = url + access_token;
+            var json = Util.ToJson(mess);
+            var retJson = Util.HttpPost2(url, json);
+            return Util.JsonTo<SendReturnCode>(retJson);
+        }
+
+        /// <summary>
+        /// 根据分组进行群发
+        /// </summary>
+        /// <param name="mess"></param>
+        /// <returns></returns>
+        public SendReturnCode SendMessByGroup(FilterMess mess)
+        {
+            CheckGlobalCredential();
+            return SendMessByGroup(mess, AppID, AppSecret);
+        }
+
+        /// <summary>
+        /// 根据OpenID列表群发
+        /// </summary>
+        /// <param name="mess"></param>
+        /// <param name="appId"></param>
+        /// <param name="appSecret"></param>
+        /// <returns></returns>
+        public SendReturnCode SendMessByUsers(ToUserMess mess, string appId, string appSecret)
+        {
+            var url = "https://api.weixin.qq.com/cgi-bin/message/mass/send?access_token=";
+            string access_token = GetAccessToken(appId, appSecret);
+            url = url + access_token;
+            var json = Util.ToJson(mess);
+            var retJson = Util.HttpPost2(url, json);
+            return Util.JsonTo<SendReturnCode>(retJson);
+        }
+
+        /// <summary>
+        /// 根据OpenID列表群发
+        /// </summary>
+        /// <param name="mess"></param>
+        /// <returns></returns>
+        public SendReturnCode SendMessByUsers(ToUserMess mess)
+        {
+            CheckGlobalCredential();
+            return SendMessByUsers(mess, AppID, AppSecret);
+        }
+
+        /// <summary>
+        /// 删除群发.
+        /// 请注意，只有已经发送成功的消息才能删除删除消息只是将消息的图文详情页失效，已经收到的用户，还是能在其本地看到消息卡片。 另外，删除群发消息只能删除图文消息和视频消息，其他类型的消息一经发送，无法删除。
+        /// </summary>
+        /// <param name="msgid"></param>
+        /// <param name="appId"></param>
+        /// <param name="appSecret"></param>
+        /// <returns></returns>
+        public ReturnCode DeleteMess(int msgid, string appId, string appSecret)
+        {
+            var url = "https://api.weixin.qq.com//cgi-bin/message/mass/delete?access_token=";
+            string access_token = GetAccessToken(appId, appSecret);
+            url = url + access_token;
+            var json = "{\"msgid\":" + msgid.ToString() + "}";
+            var retJson = Util.HttpPost2(url, json);
+            return Util.JsonTo<ReturnCode>(retJson);
+        }
+
 
         #endregion
 
@@ -445,12 +585,23 @@ namespace Loogn.WeiXinSDK
             }
         }
 
+        /// <summary>
+        /// 创建QRCode
+        /// </summary>
+        /// <param name="isTemp"></param>
+        /// <param name="scene_id"></param>
+        /// <returns></returns>
         public static QRCodeTicket CreateQRCode(bool isTemp, int scene_id)
         {
             CheckGlobalCredential();
             return CreateQRCode(isTemp, scene_id, AppID, AppSecret);
         }
 
+        /// <summary>
+        /// 得到QR图片地址
+        /// </summary>
+        /// <param name="qrcodeTicket"></param>
+        /// <returns></returns>
         public static string GetQRUrl(string qrcodeTicket)
         {
             return "https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=" + System.Web.HttpUtility.HtmlEncode(qrcodeTicket);
@@ -734,6 +885,18 @@ namespace Loogn.WeiXinSDK
             return Util.JsonTo<ReturnCode>(json);
         }
 
+        /// <summary>
+        /// 移动用户分组
+        /// </summary>
+        /// <param name="openid"></param>
+        /// <param name="groupid"></param>
+        /// <returns></returns>
+        public static ReturnCode MoveGroup(string openid, int groupid)
+        {
+            CheckGlobalCredential();
+            return MoveGroup(openid, groupid, AppID, AppSecret);
+        }
+
         #endregion
 
         #region 多媒体文件
@@ -741,11 +904,11 @@ namespace Loogn.WeiXinSDK
         /// 上传多媒体文件
         /// </summary>
         /// <param name="file"></param>
-        /// <param name="type"></param>
+        /// <param name="type"> 媒体文件类型,image,voice,video,thumb,news</param>
         /// <param name="appId"></param>
         /// <param name="appSecret"></param>
         /// <returns></returns>
-        public static MediaInfo UploadMedia(string file, MediaType type, string appId, string appSecret)
+        public static MediaInfo UploadMedia(string file, string type, string appId, string appSecret)
         {
             string url = "http://file.api.weixin.qq.com/cgi-bin/media/upload?access_token=";
             string access_token = GetAccessToken(appId, appSecret);
@@ -763,10 +926,62 @@ namespace Loogn.WeiXinSDK
             }
         }
 
-        public static MediaInfo UploadMedia(string file, MediaType type)
+        public static MediaInfo UploadMedia(string file, string type)
         {
             CheckGlobalCredential();
             return UploadMedia(file, type, AppID, AppSecret);
+        }
+
+        public static MediaInfo UploadVideoForMess(UploadVideoInfo videoInfo,string appId, string appSecret)
+        {
+            var url = "https://file.api.weixin.qq.com/cgi-bin/media/uploadvideo?access_token=";
+            var access_token = GetAccessToken(appId, appSecret);
+            var json = Util.HttpPost2(url, Util.ToJson(videoInfo));
+            if (json.IndexOf("errcode") > 0)
+            {
+                var mi = new MediaInfo();
+                mi.error = Util.JsonTo<ReturnCode>(json);
+                return mi;
+            }
+            else
+            {
+                return Util.JsonTo<MediaInfo>(json);
+            }
+        }
+
+        public static MediaInfo UploadVideoForMess(UploadVideoInfo videoInfo)
+        {
+            CheckGlobalCredential();
+            return UploadVideoForMess(videoInfo, AppID, AppSecret);
+        }
+
+        public static MediaInfo UploadNews(News news, string appId, string appSecret)
+        {
+            string url = "https://api.weixin.qq.com/cgi-bin/media/uploadnews?access_token=";
+            string access_token = GetAccessToken(appId, appSecret);
+            url = url + access_token;
+            var json = Util.HttpPost2(url, Util.ToJson(news));
+            if (json.IndexOf("errcode") > 0)
+            {
+                var mi = new MediaInfo();
+                mi.error = Util.JsonTo<ReturnCode>(json);
+                return mi;
+            }
+            else
+            {
+                return Util.JsonTo<MediaInfo>(json);
+            }
+        }
+
+        /// <summary>
+        /// 上传图文消息素材,用于群发
+        /// </summary>
+        /// <param name="news"></param>
+        /// <returns></returns>
+        public static MediaInfo UploadNews(News news)
+        {
+            CheckGlobalCredential();
+            return UploadNews(news, AppID, AppSecret);
         }
 
         /// <summary>
@@ -804,8 +1019,81 @@ namespace Loogn.WeiXinSDK
 
         #endregion
 
-        #region 授权获取用户基本信息 ????????????
+        #region 网页授权获取用户基本信息
+        /// <summary>
+        /// 得到获取code的Url
+        /// </summary>
+        /// <param name="appid">公众号的唯一标识</param>
+        /// <param name="redirect">授权后重定向的回调链接地址，请使用urlencode对链接进行处理</param>
+        /// <param name="scope">应用授权作用域，snsapi_base （不弹出授权页面，直接跳转，只能获取用户openid），snsapi_userinfo （弹出授权页面，可通过openid拿到昵称、性别、所在地。并且，即使在未关注的情况下，只要用户授权，也能获取其信息）</param>
+        /// <param name="state">重定向后会带上state参数，开发者可以填写a-zA-Z0-9的参数值</param>
+        /// <returns></returns>
+        public static string BuildWebCodeUrl(string appid,string redirect,string scope,string state="")
+        {
+            
+            return string.Format("https://open.weixin.qq.com/connect/oauth2/authorize?appid={0}&redirect_uri={1}&response_type=code&scope={2}&state={3}#wechat_redirect", appid, redirect, scope, state);
+        }
+        /// <summary>
+        /// 得到获取code的Url
+        /// </summary>
+        /// <param name="redirect">授权后重定向的回调链接地址，请使用urlencode对链接进行处理</param>
+        /// <param name="scope">应用授权作用域，snsapi_base （不弹出授权页面，直接跳转，只能获取用户openid），snsapi_userinfo （弹出授权页面，可通过openid拿到昵称、性别、所在地。并且，即使在未关注的情况下，只要用户授权，也能获取其信息）</param>
+        /// <param name="state">重定向后会带上state参数，开发者可以填写a-zA-Z0-9的参数值</param>
+        /// <returns></returns>
+        public static string BuildWebCodeUrl(string redirect, string scope, string state = "")
+        {
+            CheckGlobalCredential();
+            return BuildWebCodeUrl(AppID, redirect, scope, state);
+        }
+        /// <summary>
+        /// 通过code换取网页授权access_token
+        /// </summary>
+        /// <param name="appId"></param>
+        /// <param name="appSecret"></param>
+        /// <param name="code"></param>
+        /// <returns></returns>
+        public static WebCredential GetWebAccessToken(string appId, string appSecret, string code)
+        {
+            return WebCredential.GetCredential(appId, appSecret, code);
+        }
+
+        /// <summary>
+        /// 通过code换取网页授权access_token
+        /// </summary>
+        /// <param name="code"></param>
+        /// <returns></returns>
+        public static WebCredential GetWebAccessToken(string code)
+        {
+            CheckGlobalCredential();
+            return GetWebAccessToken(AppID, AppSecret, code);
+        }
+
+        /// <summary>
+        /// 得到网页授权用户信息
+        /// </summary>
+        /// <param name="access_token">网页授权接口调用凭证,注意：此access_token与基础支持的access_token不同</param>
+        /// <param name="openid">用户的唯一标识</param>
+        /// <param name="lang">返回国家地区语言版本，zh_CN 简体，zh_TW 繁体，en 英语</param>
+        /// <returns></returns>
+        public static WebUserInfo GetWebUserInfo(string access_token,string openid,  LangType lang)
+        {
+            string url = string.Format("https://api.weixin.qq.com/sns/userinfo?access_token={0}&openid={1}&lang={2}", access_token, openid, lang.ToString());
+            
+            var json = Util.HttpGet2(url);
+
+            if (json.IndexOf("errcode") > 0)
+            {
+                var ui = new WebUserInfo();
+                ui.error = Util.JsonTo<ReturnCode>(json);
+                return ui;
+            }
+            else
+            {
+                return Util.JsonTo<WebUserInfo>(json);
+            }
+        }
         #endregion
+
 
         private static void CheckGlobalCredential()
         {
