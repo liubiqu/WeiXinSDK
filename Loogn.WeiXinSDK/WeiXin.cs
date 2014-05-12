@@ -56,21 +56,22 @@ namespace Loogn.WeiXinSDK
 		/// <returns></returns>
 		public static string GetAccessToken(string appId, string appSecret)
 		{
-			if (m_setHandler == null || m_setHandler == null)
-			{
-				throw new ArgumentNullException("setHandler,getHandler", "请先调用ConfigAccessTokenCache");
-			}
-			lock (lockObj)
-			{
-				var at = m_getHandler();
-				if (string.IsNullOrEmpty(at))
-				{
-					var credential = ClientCredential.GetCredential(appId, appSecret);
-					m_setHandler(credential);
-					at = credential.access_token;
-				}
-				return at;
-			}
+			return ClientCredential.GetCredential(appId, appSecret).access_token ?? string.Empty;
+			//if (m_setHandler == null || m_getHandler == null)
+			//{
+			//	throw new ArgumentNullException("setHandler,getHandler", "请先调用ConfigAccessTokenCache");
+			//}
+			//lock (lockObj)
+			//{
+			//	var at = m_getHandler();
+			//	if (string.IsNullOrEmpty(at))
+			//	{
+			//		var credential = ClientCredential.GetCredential(appId, appSecret);
+			//		m_setHandler(credential);
+			//		at = credential.access_token;
+			//	}
+			//	return at;
+			//}
 		}
 
 		public static string GetAccessToken()
